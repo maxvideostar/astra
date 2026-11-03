@@ -335,6 +335,11 @@ overflow:auto;font:12px/1.4 monospace;white-space:pre-wrap}
 .row-ch{display:grid;grid-template-columns:150px 1fr 1fr 70px 60px;gap:8px;align-items:start;
 padding:8px 0;border-bottom:1px solid #21262d}
 .mut{color:#8b949e;font-size:12px}
+.ovl{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:9}
+.modal{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:20px;max-width:520px;width:90%}
+.modal h3{margin:0 0 10px;color:#e6edf3}
+.urlbox{display:flex;gap:6px;margin:6px 0}.urlbox input{font-size:12px}
+button.sm{padding:4px 8px;font-size:12px}
 """
 
 LOGIN = """<!doctype html><meta charset=utf-8><title>astra_web login</title><style>__STYLE__
@@ -366,7 +371,7 @@ PAGE = """<!doctype html><meta charset=utf-8><title>astra_web</title><style>__ST
 <button data-t=set onclick=tab('set')>Setari</button></nav>
 <main>
 <div id=dash class=view><div class=card><h3>Statistici live</h3>
-<table><thead><tr><th>Canal</th><th>Bitrate</th><th>CC err</th><th>PES err</th><th>Stare</th><th>Actualizat</th></tr></thead>
+<table><thead><tr><th>Canal</th><th>Bitrate</th><th>CC err</th><th>PES err</th><th>Stare</th><th>Actualizat</th><th>Preview</th></tr></thead>
 <tbody id=stats></tbody></table><div class=mut id=statnote style=margin-top:8px></div></div></div>
 
 <div id=chan class=view style=display:none><div class=card>
@@ -381,6 +386,12 @@ PAGE = """<!doctype html><meta charset=utf-8><title>astra_web</title><style>__ST
 
 <div id=cfg class=view style=display:none><div class=card><h3>Config Lua generat (read-only)</h3>
 <textarea id=cfgtext readonly style=height:60vh></textarea></div></div>
+
+<div class=ovl id=ovl onclick="if(event.target==this)closeModal()"><div class=modal>
+<h3 id=mTitle>Preview</h3>
+<div class=mut>Stream MPEG-TS - deschide-l in VLC (Media &gt; Open Network Stream) sau cu butonul de mai jos.</div>
+<div id=mUrls></div>
+<div style=margin-top:12px><button onclick=closeModal()>Inchide</button></div></div></div>
 
 <div id=set class=view style=display:none><div class=card><h3>Setari</h3>
 <label>Cale catre astra.exe</label><input id=s_path placeholder="C:\\astra\\astra.exe">
@@ -414,8 +425,9 @@ for(let n of names){let c=st[n];let age=Math.round(Date.now()/1000-c.ts);
 let stare=c.scrambled?'<span class="badge b-err">scrambled</span>':
 (c.cc>0?'<span class="badge b-err">CC</span>':'<span class="badge b-ok">OK</span>');
 b+='<tr><td>'+esc(n)+'</td><td>'+(c.bitrate!=null?c.bitrate+' Mbit/s':'-')+
-'</td><td>'+c.cc+'</td><td>'+c.pes+'</td><td>'+stare+'</td><td class=mut>'+age+'s</td></tr>'}
-document.getElementById('stats').innerHTML=b||'<tr><td colspan=6 class=mut>fara date (porneste astra sau verifica logurile)</td></tr>';
+'</td><td>'+c.cc+'</td><td>'+c.pes+'</td><td>'+stare+'</td><td class=mut>'+age+'s</td>'+
+'<td><button class=sm onclick="preview(\\''+esc(n).replace(/'/g,"\\\\'")+'\\')">&#9654;</button></td></tr>'}
+document.getElementById('stats').innerHTML=b||'<tr><td colspan=7 class=mut>fara date (porneste astra sau verifica logurile)</td></tr>';
 document.getElementById('statnote').textContent=names.length?'':
 'Daca raman goale cand astra ruleaza, formatul de log al versiunii tale difera - trimite-mi cateva linii din tab-ul Loguri.';
 }
@@ -443,6 +455,18 @@ enabled:c.enabled!==false}));let r=await j('/api/channels',{method:'POST',
 headers:{'Content-Type':'application/json'},body:JSON.stringify(clean)});
 if(r.ok)alert('Salvat. Da Restart ca sa se aplice.')}
 
+function fixHost(u){return u.replace('0.0.0.0',location.hostname).replace('://127.0.0.1','://'+location.hostname)}
+function preview(name){let c=CH.find(x=>x.name==name)||CH.find(x=>(x.name||'').split(' ')[0]==name);
+let outs=(c&&c.output||[]).filter(x=>x.trim());
+if(!outs.length){alert('Canalul nu are output definit.');return}
+document.getElementById('mTitle').textContent='Preview: '+name;
+document.getElementById('mUrls').innerHTML=outs.map(u=>{let fu=fixHost(u);
+return '<div class=urlbox><input readonly value="'+esc(fu)+'">'+
+'<button class=sm onclick="navigator.clipboard.writeText(\\''+esc(fu).replace(/'/g,"\\\\'")+'\\');this.textContent=\\'OK\\'">Copiaza</button>'+
+'<button class=sm onclick="window.open(\\''+esc(fu).replace(/'/g,"\\\\'")+'\\')">Deschide</button></div>'}).join('');
+document.getElementById('ovl').style.display='flex'}
+function closeModal(){document.getElementById('ovl').style.display='none'}
+
 let logseq=-1;
 async function loadLog(){let d=await j('/api/logs');if(d.seq==logseq)return;logseq=d.seq;
 let box=document.getElementById('logbox');if(!box.firstChild){box.innerHTML='<div id=log></div>'}
@@ -454,7 +478,8 @@ s_port.value=s.port;s_bind.value=s.bind;s_user.value=s.username;s_pass.value='';
 setnote.textContent=s.pass_set?'':' · parola implicita: admin'}
 async function saveSet(){let r=await j('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},
 body:JSON.stringify({astra_path:s_path.value,port:s_port.value,bind:s_bind.value,
-username:s_user.value,password:s_pass.value})});if(r.ok){setnote.textContent=' · '+(r.note||'salvat');s_pass.value=''}}
+username:s_user.value,password:s_pass.value})});
+if(r.ok){setnote.textContent=' · '+(r.note||'salvat');s_pass.value=''}}
 
 loadChans();refresh();
 setInterval(refresh,2000);
