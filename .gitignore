@@ -1,0 +1,7 @@
+# fisiere generate la rulare
+settings.json
+channels.json
+astra_config.lua
+astra_web.log
+__pycache__/
+*.pyc
